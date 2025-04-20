@@ -163,10 +163,6 @@ else:
         time.sleep(duration)
 
 # =============================================================================
-# END Enhanced Rich UI/UX Utilities
-# =============================================================================
-
-# =============================================================================
 # Memory Management Functions
 # =============================================================================
 
@@ -357,7 +353,7 @@ def get_hardware_info() -> Dict[str, Any]:
                     disks.append(disk)
                 info["Disks"] = disks
             else:
-                 print_warning(f"WMIC DiskDrive query failed or produced no output. Error: {result.get('error','')}")
+                print_warning(f"WMIC DiskDrive query failed or produced no output. Error: {result.get('error','')}")
 
             # Using wmic to get Baseboard (Motherboard) info
             result = run_command(["wmic", "baseboard", "get", "Product,Manufacturer,Version", "/format:list"],
@@ -370,7 +366,7 @@ def get_hardware_info() -> Dict[str, Any]:
                         mb_info[key.strip()] = value.strip()
                  info["Motherboard"] = mb_info
             else:
-                 print_warning(f"WMIC Baseboard query failed. Error: {result.get('error','')}")
+                print_warning(f"WMIC Baseboard query failed. Error: {result.get('error','')}")
 
         except Exception as e:
             print_error(f"Error getting Windows hardware info via WMIC: {e}")
@@ -626,7 +622,7 @@ def collect_system_logs(max_logs: int = 50) -> List[Dict[str, Any]]:
             try:
                 return datetime.datetime.fromisoformat(ts_str)
             except ValueError:
-                 # Fallback for non-ISO strings, attempt basic parsing or return distant past
+                 # Fallback for non-ISO, try to get hour
                  try:
                      # Example: Try parsing "Month Day HH:MM:SS" like from journalctl text
                      return datetime.datetime.strptime(ts_str, '%b %d %H:%M:%S').replace(year=datetime.datetime.now().year)
@@ -924,6 +920,19 @@ def run_command(command: Union[List[str], str], # Allow string for shell=True
     if user_confirmed: # Proceed only if confirmed (implicitly or explicitly)
         try:
             print_info(f"Executing (`shell={shell}`): `{cmd_str}`")
+
+
+            # Special handling for MSC files (Windows Management Console)
+            if cmd_str.lower().endswith('.msc') and platform.system() == "Windows":
+                # For MSC files, we need to use shell=True and prefix with 'start'
+                print_info("Detected MSC file, using special handling...")
+                modified_cmd = f"start {cmd_str}"
+                run_arg = modified_cmd
+                shell = True  # Force shell mode for MSC files
+            else:
+                # Use appropriate argument for subprocess.run based on shell mode
+                run_arg = cmd_str if shell else cmd_list
+
             # Show spinner while command is running (if Rich is available)
             if RICH_AVAILABLE:
                 with Progress(
@@ -1039,6 +1048,7 @@ def run_command(command: Union[List[str], str], # Allow string for shell=True
                 "traceback": tb
             }, success=False)
     return result
+
 
 # =============================================================================
 # LLM Interaction Functions
@@ -1753,7 +1763,7 @@ Example Response (Stop):
 STOP. The driverquery output shows very old drivers. The user should manually check the manufacturer website for updates before we continue.
 """
                 # Call the LLM for intermediate analysis
-                analysis_response = ask_llm(intermediate_prompt, model, system_message="You are analyzing the result of a single troubleshooting step and recommending the immediate next action (PROCEED, SUGGEST_NEW, or STOP).")
+                analysis_response = ask_llm(intermediate_prompt, model)
 
                 next_action = "stop" # Default action if LLM fails or is unclear
 
@@ -1913,7 +1923,7 @@ def handle_problem_description(memory: Dict[str, Any], system_report: Dict[str, 
     else:
         # Handle case where LLM is not available
         print_warning("LLM model not available. Cannot perform automated analysis.")
-        print_info("You can still use the interactive mode to run commands manually.")
+        print_info("You can still use the interactive mode to manually run commands ('run: your command') or tools ('execute toolname').")
         return None # No analysis performed
 
 def interactive_mode(memory: Dict[str, Any], system_report: Dict[str, Any], model: str) -> None:
@@ -2262,9 +2272,181 @@ def handle_system_scan() -> Dict[str, Any]:
     return report
 
 # =============================================================================
-# Main Application Entry Point
+# LLM Auto Health Report
 # =============================================================================
 
+def llm_auto_health_report(system_report: dict, model: str) -> None:
+    """
+    Generate and display a proactive LLM health report based on system and log status, before user input.
+    """
+    logs = system_report.get("recent_logs", [])
+    log_patterns = analyze_logs_for_patterns(logs)
+
+    # Format log patterns for LLM consumption
+    patterns_text = ""
+    if log_patterns.get("suspicious_apps"):
+        patterns_text += f"- Suspicious applications mentioned: {', '.join(log_patterns['suspicious_apps'])}\n"
+    if log_patterns.get("app_crashes"):
+        patterns_text += f"- Application crash events detected: {len(log_patterns['app_crashes'])}\n"
+    if log_patterns.get("service_failures"):
+        patterns_text += f"- Service failure events detected: {len(log_patterns['service_failures'])}\n"
+    if log_patterns.get("driver_issues"):
+        patterns_text += f"- Potential driver issue events detected: {len(log_patterns['driver_issues'])}\n"
+    if log_patterns.get("permission_errors"):
+        patterns_text += f"- Permission error events detected: {len(log_patterns['permission_errors'])}\n"
+    if log_patterns.get("disk_errors"):
+        patterns_text += f"- Potential disk error events detected: {len(log_patterns['disk_errors'])}\n"
+    if log_patterns.get("frequent_sources"):
+        top_sources = list(log_patterns["frequent_sources"].items())[:5]
+        patterns_text += "- Most frequent error/warning sources:\n"
+        for source, data in top_sources:
+            levels = ', '.join(data['levels'])
+            patterns_text += f"  - {source}: {data['count']} occurrences (Levels: {levels})\n"
+    if log_patterns.get("error_clusters"):
+        patterns_text += "- Significant error clusters (time periods with high error counts):\n"
+        for cluster in log_patterns["error_clusters"][:3]:
+            patterns_text += f"  - {cluster['count']} errors between {cluster['start']} and {cluster['end']}\n"
+    if not patterns_text:
+        patterns_text = "No specific error patterns detected in the analyzed logs."
+
+    # Format a sample of logs for context
+    logs_text = ""
+    if logs:
+        logs_text = "**Recent System Logs (up to 15 most recent errors/warnings/critical):**\n"
+        logs_text += "\n".join(
+            f"- [{log.get('TimeCreated', 'N/A')}] Lvl: {log.get('Level', 'N/A')} Src: {log.get('ProviderName', 'N/A')} ID: {log.get('Id','N/A')} | {log.get('Message', 'N/A')}"
+            for log in logs[:15]
+        )
+    else:
+        logs_text = "**Recent System Logs:**\nNo recent system logs found or collected."
+
+    # OS information
+    os_info = system_report.get("os_info", {})
+    os_name = os_info.get('OS Name', os_info.get('system', 'Unknown'))
+    os_version = os_info.get('OS Version', os_info.get('version', 'Unknown'))
+    os_arch = os_info.get('System Type', os_info.get('architecture', 'Unknown'))
+    os_info_text = f"OS: {os_name} {os_version} ({os_arch})"
+
+    # Compose the health report prompt
+    prompt = f"""
+You are an expert PC troubleshooting assistant running locally on the user's machine.
+
+The following is a summary of the current system and log status. The user has NOT yet described any specific problem. Based on the information below, provide:
+- An overall health assessment of the system
+- Any warnings or risks you detect
+- Any urgent or notable errors
+- Suggestions for what the user should check, even if no problem is reported
+- Format your response using Markdown.
+
+---
+📊 **System Information:**
+{os_info_text}
+{('Motherboard: '+ system_report.get('hardware_info', {}).get('Motherboard', {}).get('Manufacturer', '') + ' ' + system_report.get('hardware_info', {}).get('Motherboard', {}).get('Product', '')) if system_report.get('hardware_info', {}).get('Motherboard') else ''}
+{('CPU: '+ system_report.get('hardware_info', {}).get('CPU', {}).get('Name', 'N/A')) if system_report.get('hardware_info', {}).get('CPU') else ''}
+
+---
+📉 **Log Analysis Patterns:**
+{patterns_text}
+
+---
+{logs_text}
+---
+
+🎯 **Your Task:**
+1. Analyze the system and logs above and provide a health report and any proactive recommendations.
+2. If you detect urgent errors, highlight them clearly.
+3. If the system appears healthy, say so, but mention any minor warnings.
+4. Do NOT ask the user for a problem description yet. Just report your findings.
+"""
+
+    # Query the LLM and display the result
+    print_info("\n[LLM] Analyzing system status and logs for a proactive health report...")
+    analysis = ask_llm(prompt, model, system_message="You are a helpful and cautious PC diagnostic assistant providing a proactive health report.")
+    if analysis:
+        print_md("\n[LLM SYSTEM HEALTH REPORT]\n" + analysis)
+    else:
+        print_warning("LLM did not return a health report.")
+
+# =============================================================================
+# Stepwise LLM Health Report (Modular, Memory-based)
+# =============================================================================
+def stepwise_auto_health_report(system_report: dict, model: str, memory: dict) -> None:
+    """
+    Run each diagnostic step, summarize with LLM, store intermediate summaries, and then synthesize a final health report.
+    """
+    diagnostic_steps = [
+        ("Operating System Info", lambda: system_report.get("os_info", {})),
+        ("Hardware Info", lambda: system_report.get("hardware_info", {})),
+        ("Network Info", lambda: system_report.get("network_info", {})),
+        ("Event Logs", lambda: system_report.get("recent_logs", [])),
+        ("Log Patterns", lambda: analyze_logs_for_patterns(system_report.get("recent_logs", []))),
+    ]
+    intermediate_summaries = []
+    total_steps = len(diagnostic_steps)
+
+    for idx, (title, func) in enumerate(diagnostic_steps, 1):
+        print_step(f"Stepwise Diagnostic: {title}", f"Running {title}...", idx, total_steps)
+        raw_data = func()
+        # Format the prompt for the LLM for each step
+        if title == "Event Logs":
+            logs = raw_data
+            logs_text = "\n".join(
+                f"- [{log.get('TimeCreated', 'N/A')}] Lvl: {log.get('Level', 'N/A')} Src: {log.get('ProviderName', 'N/A')} ID: {log.get('Id','N/A')} | {log.get('Message', 'N/A')}"
+                for log in logs[:15]
+            ) if logs else "No recent logs."
+            prompt = f"""
+            You are a PC diagnostic assistant. Here are recent system event logs. Summarize any critical errors, warnings, or notable patterns. Be concise and actionable.\n\nLogs:\n{logs_text}"
+            """
+        elif title == "Log Patterns":
+            patterns = raw_data
+            patterns_text = ""
+            if patterns.get("suspicious_apps"):
+                patterns_text += f"- Suspicious applications: {', '.join(patterns['suspicious_apps'])}\n"
+            if patterns.get("app_crashes"):
+                patterns_text += f"- Application crashes: {len(patterns['app_crashes'])}\n"
+            if patterns.get("service_failures"):
+                patterns_text += f"- Service failures: {len(patterns['service_failures'])}\n"
+            if patterns.get("driver_issues"):
+                patterns_text += f"- Driver issues: {len(patterns['driver_issues'])}\n"
+            if patterns.get("permission_errors"):
+                patterns_text += f"- Permission errors: {len(patterns['permission_errors'])}\n"
+            if patterns.get("disk_errors"):
+                patterns_text += f"- Disk errors: {len(patterns['disk_errors'])}\n"
+            if not patterns_text:
+                patterns_text = "No notable log patterns."
+            prompt = f"""
+            You are a PC diagnostic assistant. Here are detected log patterns. Summarize their health significance and any urgent findings.\n\nPatterns:\n{patterns_text}"
+            """
+        else:
+            prompt = f"""
+            You are a PC diagnostic assistant. Here is {title} data. Summarize any health risks or important findings.\n\nData:\n{json.dumps(raw_data, indent=2)}"
+            """
+        step_summary = ask_llm(prompt, model, system_message=f"You are a helpful PC diagnostic assistant. Summarize {title} for a health report.")
+        if step_summary:
+            print_md(f"\n[LLM SUMMARY: {title}]\n" + step_summary)
+            intermediate_summaries.append({"step": title, "summary": step_summary})
+        else:
+            print_warning(f"LLM did not return a summary for {title}.")
+            intermediate_summaries.append({"step": title, "summary": "No summary returned."})
+        # Save each intermediate summary to memory
+        memory = add_to_memory_list(memory, "health_report_summaries", {"step": title, "summary": step_summary}, max_items=10)
+        save_memory(memory)
+
+    # Final synthesis step
+    print_step("Final Synthesis", "Aggregating all stepwise summaries for a holistic health report.", None, None)
+    all_summaries_text = "\n\n".join(f"[{item['step']}]\n{item['summary']}" for item in intermediate_summaries)
+    final_prompt = f"""
+    You are a PC troubleshooting assistant. Here are stepwise health summaries from different diagnostic checks. Synthesize them into a single, holistic health report. Highlight urgent issues, cross-reference findings, and provide clear recommendations.\n\n{all_summaries_text}\n\nRespond in Markdown."
+    """
+    final_report = ask_llm(final_prompt, model, system_message="You are a helpful PC diagnostic assistant. Synthesize all stepwise summaries into a final health report.")
+    if final_report:
+        print_md("\n[LLM FINAL HEALTH REPORT]\n" + final_report)
+        memory = add_to_memory_list(memory, "health_report_summaries", {"step": "Final Synthesis", "summary": final_report}, max_items=10)
+        save_memory(memory)
+    else:
+        print_warning("LLM did not return a final health report.")
+
+# --- Integrate into main() ---
 def main() -> None:
     """Main application entry point."""
     display_welcome()
@@ -2311,6 +2493,10 @@ def main() -> None:
     memory["system_info"] = system_report
     save_memory(memory)
 
+    # Generate proactive LLM health report
+    if llm_available and model:
+        stepwise_auto_health_report(system_report, model, memory)
+
     # If LLM is available, proceed with problem analysis
     if llm_available and model: # Ensure model is selected
         # Get problem description which then calls handle_llm_response
@@ -2346,5 +2532,3 @@ if __name__ == "__main__":
         print("--- END TRACEBACK ---")
         print_info("Please report this issue with the above error details.")
         sys.exit(1) # Exit with error code
-
-# --- END OF FILE pc_fix.py ---
