@@ -122,6 +122,7 @@ AeonFix/
 ---
 
 ## ✨ Future Features
+- Improve context awareness on sequencial fixes / actions
 - Working / Test linux version
 - Screenshot OCR and Vision Model diagnostics
 - Auto-correction using Ansible-like structured tasks
