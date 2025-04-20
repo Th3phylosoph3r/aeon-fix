@@ -48,11 +48,11 @@ AeonFix uses models via **Ollama**. Install Ollama first:
 ollama run gemma3:12b
 ```
 
-### Alternative Models (for advanced users):
+### Alternative Models :
 
 ```bash
 ollama run gemma3:27b
-ollama run mistral:latest
+ollama run llama3.3
 ```
 
 These models are downloaded automatically after the first run.
@@ -64,7 +64,7 @@ These models are downloaded automatically after the first run.
 ### Method 1: From Terminal
 
 ```bash
-python pc_fix.py
+python aeon_fix.py
 ```
 
 ### Method 2: Use `launch_aeonfix.bat`
@@ -111,18 +111,18 @@ Suggested command:
 
 ```
 AeonFix/
-├── pc_fix.py                 # Main script
+├── aeon_fix.py                 # Main script
 ├── launch_aeonfix.bat        # Launcher (runs in Windows Terminal)
 ├── install_aeonfix.bat       # One-click installer
-├── assistant_memory.json     # Persistent memory
-├── assistant_actions.log     # Structured action logs
+├── aeon_memory.json     # Persistent memory
+├── aeonfix_actions.log     # Structured action logs
 └── README.md                 # This file
 ```
 
 ---
 
 ## ✨ Future Features
-
+- Working / Test linux version
 - Screenshot OCR and Vision Model diagnostics
 - Auto-correction using Ansible-like structured tasks
 - Timeline of historical problems solved
