@@ -10,7 +10,7 @@ AeonFix is your semi-autonomous, private, offline assistant that helps you diagn
 - ⚡ Safe execution of AI-suggested system commands with confirmation
 - 📎 Persistent memory: remembers the last issue and resolution
 - 📄 Rich Markdown formatting in terminal with `rich`
-- 📷 Multimodal ready (supports screenshots, OCR and vision models)
+- (WIP) 📷 Multimodal ready (supports screenshots, OCR and vision models)
 
 ---
 
