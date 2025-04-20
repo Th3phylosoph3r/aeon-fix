@@ -1,5 +1,7 @@
 # 🔧 AeonFix: AI-Powered Computer Recovery Assistant
 
+![AeonFix Header](https://raw.githubusercontent.com/Th3phylosoph3r/aeon-fix/master/assets/aeon_fix_header_image.png)
+
 AeonFix is your semi-autonomous, private, offline assistant that helps you diagnose, troubleshoot, and repair your Windows and Linux PC issues. Powered by local LLMs via [Ollama](https://ollama.com), AeonFix combines system log parsing, real-time command execution, AI analysis, and structured memory logging to assist you like a professional support engineer — right from your terminal.
 
 ## ⚙️ Features
@@ -138,4 +140,3 @@ Created with AI by Th3Philosoph3r, powered by local open-source AI. No cloud. No
 ## 📜 License
 
 MIT — Use freely, modify responsibly.
-
