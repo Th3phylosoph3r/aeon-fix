@@ -17,7 +17,7 @@ if errorlevel 1 (
 
 :: Install dependencies
 python -m pip install --upgrade pip
-pip install rich psutil ollama
+pip install rich psutil ollama Pillow pyperclip
 
 :: Check if Ollama is installed
 where ollama >nul 2>&1

@@ -1,5 +1,3 @@
-# --- START OF FILE pc_fix.py ---
-
 import subprocess
 import json
 import re
@@ -13,6 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple, Union # Ensure typing impor
 import traceback
 import shlex # Ensure shlex is imported
 import webbrowser # Ensure webbrowser is imported
+from PIL import ImageGrab
 
 # Optional imports - will be checked at runtime
 try:
@@ -161,6 +160,27 @@ else:
     def show_spinner(message: str, duration: float = 2.0):
         print(f"...{message}...")
         time.sleep(duration)
+
+# =============================================================================
+# Clipboard Image Capture for Vision LLM
+# =============================================================================
+
+def save_clipboard_image():
+    """Check clipboard for image, save to ./screenshots, return path or None."""
+    img = ImageGrab.grabclipboard()
+    if img is not None:
+        folder = os.path.join(os.getcwd(), "screenshots")
+        os.makedirs(folder, exist_ok=True)
+        filename = f"screenshot_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        path = os.path.join(folder, filename)
+        img.save(path, 'PNG')
+        print_success(f"Screenshot saved: {path}")
+        return path
+    else:
+        print_warning("No image found in clipboard. Use Win+Shift+S to take a screenshot, then Ctrl+C.")
+        return None
+
+
 
 # =============================================================================
 # Memory Management Functions
@@ -1934,6 +1954,7 @@ def interactive_mode(memory: Dict[str, Any], system_report: Dict[str, Any], mode
     print("  - Type 'scan' to perform a new system scan")
     print("  - Type 'suggest' to get command suggestions")
     print("  - Type 'execute' followed by a command name to run Windows tools")
+    print("  - Type 'paste_image' to save a screenshot from clipboard and reference it")
     print("  - Type 'exit' to quit")
     
     # Store the problem description for suggestion context
@@ -1978,6 +1999,41 @@ def interactive_mode(memory: Dict[str, Any], system_report: Dict[str, Any], mode
                 print(f"{i}. {cmd_str}")
                 print(f"   Purpose: {suggestion['purpose']}")
                 
+
+        elif user_input_lower.startswith("analyze"):
+            prompt = user_input[len("analyze"):].strip()
+            if not prompt:
+                prompt = print_user_input("Enter your question or context for the image:")
+            image_paths = memory.get("image_paths", [])
+            if image_paths:
+                try:
+                    response = llm_client.chat(
+                        model=model,
+                        messages=[{
+                            'role': 'user',
+                            'content': prompt,
+                            'images': image_paths
+                        }]
+                    )
+                    print_md(response['message']['content'])
+                    memory["image_paths"] = []  # Clear after use
+                except Exception as e:
+                    print_error(f"Error sending image to LLM: {e}")
+            else:
+                print_warning("No image attached. Use 'paste_image' first.")
+
+
+
+        # --- Clipboard Screenshot Paste Command ---
+        elif user_input_lower == "paste_image":
+            img_path = save_clipboard_image()
+            if img_path:
+                if "image_paths" not in memory:
+                    memory["image_paths"] = []
+                memory["image_paths"].append(img_path)
+                print_info(f"Image ready for next LLM analysis: {img_path}")
+
+
             if RICH_AVAILABLE:
                 selection = Prompt.ask("Enter the number of the command to run, or '0' to cancel", default="0")
             else:

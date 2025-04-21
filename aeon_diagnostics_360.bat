@@ -1,4 +1,6 @@
 @echo off
+:: Change directory to the location of this script
+cd /d "%~dp0"
 :: AeonFix Ultimate Diagnostics Script - Windows Edition
 :: Gathers extensive system data to assist LLM-based diagnosis
 :: Must be run with administrator privileges
@@ -86,7 +88,7 @@ powershell "Get-WmiObject Win32_USBControllerDevice | ForEach-Object { ([wmi]($_
 cls
 color 0A
 echo =====================================
-echo AeonFix Diagnostics Complete ✅
+echo AeonFix Diagnostics Complete 
 echo Output saved in folder: %folder%
 echo =====================================
 echo.
